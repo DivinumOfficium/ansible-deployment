@@ -17,7 +17,7 @@ run_package_upgrades: true
 # Set configuration here
 app:
   # number of instances to spin up behind load balancer
-  replicas: 1
+  replicas: 2
 
   domain:
     - divinumofficium.com
