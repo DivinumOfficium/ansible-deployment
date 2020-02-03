@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# {{ ansible_managed }}
+
+# Whitespace buffer
+export ws='  '
+
+printf "\n"
+printf "${ws}HOSTNAME:        `cat /etc/hostname`\n"
+printf "${ws}ROLE:            {{ motd_role_short }}\n"
+printf "${ws}APPLICATION:     {{ motd_app_name }}\n"
+printf "\n"
+
+printf "\n"
+printf "${ws}SERVER INFORMATION:\n"
+printf "\n"
+printf "${ws}This server is host providing the public {{ motd_app_name }} website. The app is running within\n"
+printf "${ws}docker containers, and the configuration for the application, as well as the load balancer, can be\n"
+printf "${ws}found in /opt/docker.\n"
+printf "\n"
+
+printf "${ws}TRAEFIK LOAD BALANCER INFORMATION:\n"
+printf "\n"
+printf "${ws}Traefik is the load balancer, and also provides TLS termination. Certificates are automatically\n"
+printf "${ws}generated and renewed with Let's Encrypt, with notices send to '{{ le_email }} if one fails to renew.\n"
+printf "${ws}Current list of domains: {{ app.domain | join(", ") }}\n"
+printf "\n"
+
+printf "${ws}ANSIBLE INFORMATION:\n"
+printf "\n"
+printf "${ws}This server was created with an ansible playbook found at 'https://github.com/DivinumOfficium/ansible-deployment'\n"
+printf "${ws}Configuration changes should be made there and then applied using ansible. Any changes made on this\n"
+printf "${ws}server MAY BE LOST if not included in the playbook.\n"
+printf "\n"
+

@@ -1,0 +1,21 @@
+##############
+# Base definitions pointing to server hostnames
+##############
+
+# TODO : rename this file to 'inventory' and fill in your hosts below
+
+[app_servers]
+
+# LIST SERVERS HERE 
+app01.test.example.com
+app02.test.example.com
+
+
+##############
+# Child definitions, shouldn't need to adjust below here generally
+##############
+
+# Hosts which will get docker installed
+# by default, all of them
+[docker_engine:children]
+app_servers

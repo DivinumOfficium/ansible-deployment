@@ -1,0 +1,49 @@
+version: '3.5'
+
+############################
+#
+# !!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+# WARNING : MANAGED BY ANSIBLE, CHANGES MADE HERE
+# MAY BE OVERWRITTEN AT ANY TIME
+#
+# !!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+############################
+
+services:
+
+  # Container Auto Upgrader
+  upgrade:
+    image: pyouroboros/ouroboros:latest
+    restart: always
+    labels:
+      - traefik.enable=false
+    environment:
+      - INTERVAL=60
+      - SELF_UPDATE=true
+      - CLEANUP=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # Application (supports multiple if specified w/ 'up')
+  app:
+    image: divinumofficiumweb/divinumofficium:latest
+    restart: always
+    expose:
+      - 8080
+    labels:
+      - traefik.enable=true
+    networks:
+      - lbclients
+    labels:
+      - traefik.enable=true
+      - traefik.backend={{app.domain | first}}
+      - traefik.frontend.rule=Host:{{app.domain | join(",")}}
+      - traefik.docker.network=loadbalancer
+      - traefik.port=8080
+
+networks:
+  lbclients:
+    name: loadbalancer
+    external: true

@@ -1,0 +1,5 @@
+.*.swp
+
+vars.yml
+inventory
+playbook.retry

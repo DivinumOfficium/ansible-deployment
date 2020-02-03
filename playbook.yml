@@ -1,0 +1,469 @@
+#####################
+# Divinum Officium App Server Setup
+# 
+# Created by Ben Yanke
+# Last modified 04/27/2019
+#####################
+
+# Installs python if not existing so that empty hosts can be used
+- name: "Bootstrap"
+  hosts: all
+  gather_facts: False
+  
+  tasks:
+    - name: install python 2
+      become: true
+      become_method: sudo
+      changed_when: false
+      raw: test -e /usr/bin/python || (apt -y update && apt install -y python-minimal)
+
+- name: "Install Packages"
+  hosts: all
+  become: true
+  become_method: sudo
+  vars_files:
+    - vars.yml
+  tasks:
+
+    - name: Enable universe repository
+      apt_repository:
+        repo: "{{ item }}"
+      loop:
+        - "deb http://archive.ubuntu.com/ubuntu/ bionic universe"
+        - "deb http://archive.ubuntu.com/ubuntu/ bionic-updates universe"
+        - "deb http://security.ubuntu.com/ubuntu/ bionic-security universe"
+
+    - name: Install apt packages
+      become: yes
+      become_method: sudo
+      apt:
+        state: present
+        name: "{{ packages }}"
+        update_cache: yes
+      vars:
+        packages:
+          - unattended-upgrades # Automatically run system upgrades
+          - traceroute # Network debugging tool
+          - curl # web fetcher
+          - pv # progress monitor
+          - bar # Progress monitor
+          - apg # Random string generator
+          - openssh-server # SSH server - TODO: harden configuration
+          - git
+          - tree
+
+
+
+
+#####################
+# Base OS Configuration
+#####################
+- name: "Base OS Config"
+  hosts: docker_engine
+  become: true
+  become_method: sudo
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+
+    - name: "Disable Ubuntu News and Livepatch Note on MOTD"
+      become: yes
+      become_method: sudo
+      file:
+        path: "{{ item }}"
+        state: touch
+        # These can be nice but only work on ansible 2.7+
+        #modification_time: "preserve"
+        #access_time: "preserve"
+        mode: 0644
+        owner: root
+        group: root
+      with_items:
+        - "/etc/default/motd-news"
+        - "/etc/update-motd.d/80-livepatch"
+
+    - name: "Edit SSH to display MOTD on login"
+      become: yes
+      become_method: sudo
+      notify:
+         - restart ssh
+      lineinfile:
+        path: "/etc/ssh/sshd_config"
+        regexp: "{{ item.old }}"
+        line: "{{ item.new }}"
+        owner: root
+        group: root
+        mode: '0644'
+        backrefs: true
+      with_items:
+        - old: '^PrintMotd no'
+          new: 'PrintMotd yes'
+        - old: '^X11Forwarding yes'
+          new: 'X11Forwarding no'
+
+
+    - name: "Setup login message file"
+      become: yes
+      become_method: sudo
+      template:
+        src: "config/motd.j2"
+        dest: "/etc/update-motd.d/85-server-role"
+        mode: 0755
+        owner: root
+        group: root
+
+
+
+    - name: Installing fail2ban
+      become: yes
+      become_method: sudo
+      apt:
+        name: fail2ban
+
+
+    - name: Ensure unattended-upgrades is installed from apt
+      become: yes
+      become_method: sudo
+      apt:
+        name: unattended-upgrades
+
+    - name: "Setup permissions on unattended upgrades config file"
+      become: yes
+      become_method: sudo
+      file:
+        path: "/etc/apt/apt.conf.d/50unattended-upgrades"
+        state: file
+        mode: 0644
+        owner: root
+        group: root
+
+
+    - name: Setup apt unattended upgrades
+      become: yes
+      become_method: sudo
+      copy:
+        dest: "/etc/apt/apt.conf.d/50unattended-upgrades"
+        content: |
+          // {{ ansible_managed }}
+
+          Unattended-Upgrade::Allowed-Origins {
+                  "${distro_id}:${distro_codename}";
+                  "${distro_id}:${distro_codename}-security";
+                  // Extended Security Maintenance; doesn't necessarily exist for
+                  // every release and this system may not have it installed, but if
+                  // available, the policy for updates is such that unattended-upgrades
+                  // should also install from here by default.
+                  "${distro_id}ESM:${distro_codename}";
+                  "${distro_id}:${distro_codename}-updates";
+          //      "${distro_id}:${distro_codename}-proposed";
+          //      "${distro_id}:${distro_codename}-backports";
+          };
+
+          // List of packages to not update (regexp are supported)
+          Unattended-Upgrade::Package-Blacklist {
+          };
+
+          Unattended-Upgrade::DevRelease "false";
+
+          Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+          Unattended-Upgrade::MinimalSteps "true";
+          Unattended-Upgrade::InstallOnShutdown "false";
+
+          # These will not work by default without an MTA installed
+          #Unattended-Upgrade::Mail "jdoe@example.com";
+          #Unattended-Upgrade::MailOnlyOnError "false";
+
+          Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+          Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+          // NOTE - every time a kernel patch is applied, this line will tell
+          // the system it may reboot itself to apply the kernel patch. 
+          // You may want to remove this in the future if this is a problem.
+          Unattended-Upgrade::Automatic-Reboot "true";
+          Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+
+          Unattended-Upgrade::OnlyOnACPower "true";
+          Unattended-Upgrade::Skip-Updates-On-Metered-Connections "true";
+
+    - name: Setup apt unattended upgrades
+      become: yes
+      become_method: sudo
+      copy:
+        dest: "/etc/apt/apt.conf.d/20auto-upgrades"
+        content: |
+          // {{ ansible_managed }}
+
+          // Update times
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Download-Upgradeable-Packages "1";
+          APT::Periodic::Unattended-Upgrade "3";
+          APT::Periodic::AutocleanInterval "9";
+
+
+  handlers:
+      - name: restart ssh
+        become: yes
+        become_method: sudo
+        systemd:
+          name: ssh
+          state: restarted
+
+
+
+#####################
+# Docker Swarm Setup
+#####################
+- name: "Install Docker"
+  hosts: docker_engine
+  become: true
+  become_method: sudo
+
+  vars_files:
+    - vars.yml
+
+  roles:
+
+    # Install Docker
+    - role: 'geerlingguy.docker'
+      tags: ["docker-swarm", "docker"]
+      hosts: 'docker_engine'
+      become: true
+      become_method: sudo
+      docker_package_state: present
+
+
+- name: "Docker cleanup cron tasks"
+  hosts: docker_engine
+  become: true
+  become_method: sudo
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+
+
+    - name: "Disk Cleanup Jobs"
+      become: yes
+      become_method: sudo
+      cron:
+        name: "{{ item.name }}"
+        user: 'root'
+        minute: "0"
+        hour: "*/3"
+        job: '{{ item.job }}'
+        cron_file: 'docker-cleanup'
+        state: present
+        disabled: no
+      with_items:
+        - job: 'docker image prune -a --filter "until=7d" --force &> /dev/null'
+          name: 'Prune old images'
+        - job: 'docker container prune -a --filter "until=7d " --force &> /dev/null'
+          name: 'Prune old containers'
+
+  #####################
+  # Host configuration
+  #####################
+
+- name: "Additional Host Configuration"
+  hosts: all
+  become: true
+  become_method: sudo
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+
+    ##########
+    # Add some lines to bashrc files
+    ##########
+    - name: Add bashrc lines
+      become: yes
+      become_method: sudo
+      blockinfile:
+        dest: "{{ item }}"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK FOR CLI TOOLS"
+        block: |
+
+          alias l=ls
+          alias ll="ls -lha"
+
+          # ctop is an htop-like tool for containers
+          function ctop() {
+
+            docker run --rm -ti \
+              --name=ctop$RANDOM \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              quay.io/vektorlab/ctop:latest
+          }
+
+        state: present
+        create: yes
+      with_items:
+        - /home/{{system_users | first}}/.bashrc
+        - /etc/skel/.bashrc
+
+
+
+#####################
+# Upgrade and Cleanup Apt
+#####################
+
+- name: "Upgrade All Tasks"
+  hosts: all
+  become: true
+  become_method: sudo
+
+  vars_files:
+    - vars.yml
+  tasks:
+
+    - name: Update all packages to the latest version
+      become: yes
+      become_method: sudo
+      when: run_package_upgrades
+      apt:
+        upgrade: dist
+
+    - name: Remove useless packages from the cache
+      become: yes
+      become_method: sudo
+      when: run_package_upgrades
+      apt:
+        autoclean: yes
+
+    - name: Remove dependencies that are no longer required
+      become: yes
+      become_method: sudo
+      when: run_package_upgrades
+      apt:
+        autoremove: yes
+
+
+#####################
+# Divinum Officium App Configuration
+#####################
+
+
+- name: "Auto update container"
+  hosts: all
+  become: true
+  become_method: sudo
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+
+    - name: "Make directories"
+      become: true
+      become_method: sudo
+      file:
+        path: '{{ item }}'
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      with_items:
+        - /opt/docker/divinum-officium
+
+    - name: "Set up Application"
+      become: true
+      become_method: sudo
+      register: dockercompose
+      template:
+        src: config/divinum-officium/{{ item.file }}
+        dest: /opt/docker/divinum-officium/{{ item.file }}
+        mode: 0644
+        owner: root
+        group: root
+      with_items:
+        - file: docker-compose.yml
+
+
+    - name: "Check for LB Network"
+      become: true
+      become_method: sudo
+      register: lbcheck
+      failed_when: false
+      changed_when: lbcheck.rc != 0
+      shell: "docker network ls | awk '{print $2}' | grep 'loadbalancer' &> /dev/null"
+
+
+    - name: "Check for LB Network"
+      become: true
+      become_method: sudo
+      when: lbcheck.rc != 0
+      shell: "docker network create loadbalancer"
+
+
+    # Uses the docker-compose file to restart traefik if the config files are modified
+    - name: "Restart App with docker-compose on config change"
+      become: true
+      become_method: sudo
+      when: dockercompose.changed
+      command: "docker-compose {{ item }}"
+      args:
+        chdir: /opt/docker/divinum-officium/
+      with_items:
+        - config
+        - pull
+        - down --remove-orphans
+        - up -d --scale app={{app.replicas|default(2)}}
+
+
+
+- name: "Setup Load Balancer"
+  hosts: all
+  become: true
+  become_method: sudo
+
+  vars_files:
+    - vars.yml
+  tasks:
+
+    - name: "Make directories"
+      become: true
+      become_method: sudo
+      file:
+        path: '{{ item }}'
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      with_items:
+        - /opt/docker/traefik
+
+    - name: "Set up Traefik load balancer configuration files"
+      register: traefikconfig
+      become: true
+      become_method: sudo
+      template:
+        src: config/traefik/{{ item.file }}
+        dest: /opt/docker/traefik/{{ item.file }}
+        mode: 0755
+        owner: root
+        group: root
+      with_items:
+        - file: docker-compose.yml
+        - file: traefik.toml
+
+    # Uses the docker-compose file to restart traefik if the config files are modified
+    - name: "Restart Traefik with docker-compose on config change"
+      become: true
+      become_method: sudo
+      when: traefikconfig.changed
+      command: "docker-compose {{ item }}"
+      args:
+        chdir: /opt/docker/traefik/
+      with_items:
+        - config
+        - pull
+        - down --remove-orphans
+        - up -d
+
+
+

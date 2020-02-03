@@ -1,0 +1,25 @@
+# TODO : rename this file to vars.yml and fill in your data below
+
+# Local admin user on the hosts
+system_users:
+  - [your username on host]
+
+ansible_managed: "Note, this file is managed with ansible. Make your changes in the ansible playbook or they will be lost."
+
+le_email: [email for let's encrypt notifications]
+
+# NOTE: update this so we only need one
+
+# Set to true to run 'apt dist-upgrade; apt autoclean ; apt autoremove' as part of the playbook
+run_package_upgrades: true
+
+
+# Set configuration here
+app:
+  # number of instances to spin up behind load balancer
+  replicas: 1
+
+  domain:
+    - divinumofficium.com
+    - www.divinumofficium.com
+

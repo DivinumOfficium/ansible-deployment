@@ -1,0 +1,38 @@
+version: '3.5'
+
+############################
+#
+# !!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+# WARNING : MANAGED BY ANSIBLE, CHANGES MADE HERE
+# MAY BE OVERWRITTEN AT ANY TIME
+#
+# !!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+############################
+
+services:
+
+  # Load balancer and TLS handler
+  traefik:
+    image: traefik:1.7
+    container_name: traefik
+    restart: always
+    command: --docker
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/docker/traefik/traefik.toml:/traefik.toml
+      - /opt/docker/traefik/certs:/certs
+      - /opt/docker/traefik/data:/data
+    labels:
+      - traefik.enable=false
+    networks:
+      - lbclients
+
+networks:
+  lbclients:
+    name: loadbalancer
+    external: true
