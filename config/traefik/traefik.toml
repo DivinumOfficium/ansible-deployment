@@ -15,6 +15,9 @@ logLevel = "INFO"
 
 defaultEntryPoints = ["http","https"]
 
+# Enable access logging
+[accessLog]
+
 [entryPoints]
   [entryPoints.http]
     address = ":80"
@@ -26,6 +29,11 @@ defaultEntryPoints = ["http","https"]
   [entryPoints.https]
       address = ":443"
       [entryPoints.https.tls]
+
+      # redirect to main domain for consistency and SEO
+      [entryPoints.https.redirect]
+        regex = "^https://{{ app.domain | last }}/(.*)"
+        replacement = "https://{{ app.domain | first }}/$1"
 
 
 [acme]
@@ -42,6 +50,6 @@ onDemand = false
 
 [docker]
 endpoint = "unix:///var/run/docker.sock"
-domain = "{{ app.domain }}"
+domain = "{{ app.domain | first }}"
 watch = true
 exposedByDefault = false
