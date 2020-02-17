@@ -1,6 +1,6 @@
 # Running Divinium Officium
 
-Goal for this page is to document all the different components that are used to run Divinium Officium (DO) team to deploy new servers for production deployment of [DivinumOfficium](https://www.divinumofficium.com/).  The codebase for this website is [DivinumOfficium/divinum-officium](https://github.com/DivinumOfficium/divinum-officium).
+Goal for this page is to document all the different components that are used to run Divinium Officium (DO), to deploy new servers for production deployment of [DivinumOfficium](https://www.divinumofficium.com/).  The codebase for this website is [DivinumOfficium/divinum-officium](https://github.com/DivinumOfficium/divinum-officium).
 
 ## Overall
 The flow for getting code commit updates running onto the actual 
@@ -27,7 +27,7 @@ The Ansible [playbook.yml](https://github.com/DivinumOfficium/ansible-deployment
 * Image configured to use Ubuntu's "unattended-upgrades" package, which will apply the latest stable packages from Ubuntu
 * If a reboot is needed for security patches, Ubuntu will reboot in the middle of the night
 
-Note that Ansible operates on servers over your existing SSH credentials, so ansible should be installed on your local workstation, and then use it to SSH into the remote instances and configure them. For more information on this, consult the Ansible documentation.
+Note that Ansible operates on servers over your existing SSH credentials, so Ansible should be installed on your local workstation, and then use it to SSH into the remote instances and configure them. For more information on this, consult the [Ansible documentation](https://spin.atomicobject.com/2015/09/21/ansible-configuration-management-laptop/).
 
 ### Docker
 
