@@ -27,6 +27,26 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
   # Application (supports multiple if specified w/ 'up')
+  cache: 
+    image: varnish:6.4
+    restart: always
+    expose:
+      - 80
+    labels:
+      - traefik.enable=true
+    volumes:
+      - ./config/varnish/default.vcl:/etc/varnish/default.vcl:ro
+    tmpfs:
+      - /usr/local/var/varnish:exec
+    networks:
+      - lbclients
+    labels:
+      - traefik.enable=true
+      - traefik.backend={{app.test_domain}}
+      - traefik.frontend.rule=Host:{{app.test_domain}}
+      - traefik.docker.network=loadbalancer
+      - traefik.port=80
+
   app:
     image: divinumofficiumweb/divinumofficium:latest
     restart: always
@@ -36,6 +56,7 @@ services:
       - traefik.enable=true
     networks:
       - lbclients
+    labels:
     labels:
       - traefik.enable=true
       - traefik.backend={{app.domain | first}}

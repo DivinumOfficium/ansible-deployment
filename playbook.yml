@@ -258,9 +258,9 @@
         state: present
         disabled: no
       with_items:
-        - job: 'docker image prune -a --filter "until=7d" --force &> /dev/null'
+        - job: 'docker image prune -a --force &> /dev/null'
           name: 'Prune old images'
-        - job: 'docker container prune -a --filter "until=7d " --force &> /dev/null'
+        - job: 'docker container prune -a --force &> /dev/null'
           name: 'Prune old containers'
 
   #####################
@@ -369,6 +369,8 @@
         mode: '0755'
       with_items:
         - /opt/docker/divinum-officium
+        - /opt/docker/divinum-officium/config
+        - /opt/docker/divinum-officium/config/varnish
 
     - name: "Set up Application"
       become: true
@@ -382,6 +384,7 @@
         group: root
       with_items:
         - file: docker-compose.yml
+        - file: config/varnish/default.vcl
 
 
     - name: "Check for LB Network"
