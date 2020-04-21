@@ -17,7 +17,7 @@ backend server1 {
         "Connection: close"
         "User-Agent: Varnish Health Probe";
 
-      .interval  = 30s; # check the health of each backend every 5 seconds
+      .interval  = 60s; # check the health of each backend every 5 seconds
       .timeout   = 3s; # timing out after 1 second.
       .window    = 5;  # If 3 out of the last 5 polls succeeded the backend is considered healthy, otherwise it will be marked as sick
       .threshold = 3;
@@ -35,12 +35,12 @@ sub vcl_backend_response {
 }
 
 
-sub vcl_recv {
+#sub vcl_recv {
     # Only cache GET or HEAD requests. This makes sure the POST requests are always passed.
-    if (req.method != "GET" && req.method != "HEAD") {
-      return (pass);
-    }
-}
+#    if (req.method != "GET" && req.method != "HEAD") {
+#      return (pass);
+#    }
+#}
 
 sub vcl_recv {
     # Strip hash, server doesn't need it.
