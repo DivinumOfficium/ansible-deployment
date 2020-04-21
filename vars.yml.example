@@ -6,13 +6,30 @@ system_users:
 
 ansible_managed: "Note, this file is managed with ansible. Make your changes in the ansible playbook or they will be lost."
 
-le_email: [email for let's encrypt notifications]
+# Not ready yet - leave false
+use_varnish_prod: false
 
-# NOTE: update this so we only need one
+le_email: [email for let's encrypt notifications]
 
 # Set to true to run 'apt dist-upgrade; apt autoclean ; apt autoremove' as part of the playbook
 run_package_upgrades: true
 
+# Swap config to enable swap
+swapfile_size: "{{ ((ansible_memtotal_mb | int * 4)
+                    if (ansible_memtotal_mb | int <= 2048)
+                    else '4096') }}"
+
+swapfile_fallocate: True
+swapfile_path: "/swapfile-{{ swapfile_size }}"
+
+swapfile_swappiness: 60
+swapfile_vfs_cache_pressure: 100
+
+swapfile_sysctl:
+  "vm.swappiness": "{{ swapfile_swappiness }}"
+  "vm.vfs_cache_pressure": "{{ swapfile_vfs_cache_pressure }}"
+
+swapfile_delete: False
 
 # Set configuration here
 app:

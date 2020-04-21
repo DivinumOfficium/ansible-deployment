@@ -52,12 +52,97 @@
           - git
           - tree
 
+    - name: Remove unneeded apt packages
+      become: yes
+      become_method: sudo
+      apt:
+        state: absent
+        name: "{{ packages }}"
+        purge: yes
+      vars:
+        packages:
+          - snapd
+          - lxcfs
 
+
+#####################
+# Swap File
+#####################
+
+- name: "Setup Swap File"
+  hosts: docker_engine
+  become: true
+  become_method: sudo
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+
+
+    - name: Configure swap file swappiness and cache pressure
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: "present"
+        reload: True
+      with_dict: "{{ swapfile_sysctl }}"
+
+    - name: Disable swap file
+      shell: test -f {{ swapfile_path }} && swapoff {{ swapfile_path }} || true
+      changed_when: False
+      when: swapfile_delete
+
+    - name: Create swap file
+      command: |
+        {% if swapfile_fallocate %}
+        fallocate -l {{ ((swapfile_size) | int * 1024 * 1024) }} {{ swapfile_path }}
+        {% else %}
+        dd if=/dev/zero of={{ swapfile_path }} bs=1M count={{ swapfile_size }}
+        {% endif %}
+      args:
+        creates: "{{ swapfile_path }}"
+      register: swapfile_register_create
+      when: not swapfile_delete
+
+    - name: Set swap file permissions
+      file:
+        path: "{{ swapfile_path }}"
+        state: "file"
+        owner: "root"
+        group: "root"
+        mode: "0600"
+      when: (not swapfile_delete and not ansible_check_mode)
+
+    - name: Initialize swap file
+      command: mkswap {{ swapfile_path }}
+      when: (swapfile_register_create is changed and not swapfile_delete)
+
+    - name: Enable swap file
+      command: swapon {{ swapfile_path }}
+      when: (swapfile_register_create is changed and not swapfile_delete)
+
+    - name: Manage swap file in /etc/fstab
+      mount:
+        src: "{{ swapfile_path }}"
+        name: "none"
+        fstype: "swap"
+        opts: "sw,nofail"
+        dump: "0"
+        passno: "0"
+        state: "{{ 'absent' if swapfile_delete else 'present' }}"
+
+    - name: Remove swap file
+      file:
+        path: "{{ swapfile_path }}"
+        state: "absent"
+      when: swapfile_delete
 
 
 #####################
 # Base OS Configuration
 #####################
+
 - name: "Base OS Config"
   hosts: docker_engine
   become: true
@@ -75,8 +160,8 @@
         path: "{{ item }}"
         state: touch
         # These can be nice but only work on ansible 2.7+
-        #modification_time: "preserve"
-        #access_time: "preserve"
+        modification_time: "preserve"
+        access_time: "preserve"
         mode: 0644
         owner: root
         group: root
@@ -348,6 +433,38 @@
 #####################
 
 
+- name: "miscellaneous server maintenance and hardening"
+  hosts: all
+  become: true
+  become_method: sudo
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+
+    - name: "Add cron entry to kill longrunning perl to prevent runaways"
+      become: true
+      become_method: sudo
+      cron:
+        name: '{{ item.name }}'
+        cron_file: 'misc-jobs'
+        user: '{{ item.user }}'
+        job: '{{ item.job }}'
+      with_items:
+        - name: 'Kill longrunning perl jobs'
+          user: 'root'
+          job: '/usr/bin/killall -9 --older-than 15s /usr/bin/perl'
+        - name: 'Kill longrunning perl jobs 2'
+          user: 'root'
+          job: 'sleep 15 ; /usr/bin/killall -9 --older-than 5s /usr/bin/perl'
+        - name: 'Kill longrunning perl jobs 3'
+          user: 'root'
+          job: 'sleep 30 ; /usr/bin/killall -9 --older-than 5s /usr/bin/perl'
+        - name: 'Kill longrunning perl jobs 4'
+          user: 'root'
+          job: 'sleep 45 ; /usr/bin/killall -9 --older-than 5s /usr/bin/perl'
+
 - name: "Auto update container"
   hosts: all
   become: true
@@ -376,6 +493,8 @@
       become: true
       become_method: sudo
       register: dockercompose
+      tags:
+        - varnish
       template:
         src: config/divinum-officium/{{ item.file }}
         dest: /opt/docker/divinum-officium/{{ item.file }}
@@ -413,13 +532,16 @@
       register: result
       until: result.rc == 0
       command: "docker-compose {{ item }}"
+      tags:
+        - varnish
       args:
         chdir: /opt/docker/divinum-officium/
       with_items:
         - config
         - pull
-        - down --remove-orphans
-        - up -d --scale app={{app.replicas|default(2)}}
+        # Up does the right thing, usually
+        #- down --remove-orphans
+        - up -d --scale app={{app.replicas|default(1)}} --remove-orphans
 
 
 

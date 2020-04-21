@@ -1,18 +1,12 @@
 vcl 4.0;
 
-# Allowable purge request sources
-acl purge {
-    # ACL we'll use later to allow purges
-    "localhost";
-    "127.0.0.1";
-    "::1";
-}
+import std;
+import directors;
 
-
-backend default {
+backend server1 {
   .host = "app";
   .port = "8080";
-  .max_connections = "50";
+  .max_connections = 50;
 
     .probe = {
       #.url = "/"; # short easy way (GET /)
@@ -32,40 +26,91 @@ backend default {
     .first_byte_timeout     = 300s;   # How long to wait before we receive a first byte from our backend?
     .connect_timeout        = 5s;     # How long to wait for a backend connection?
     .between_bytes_timeout  = 2s;     # How long to wait between bytes received from our backend?
-  }
+
 }
 
-sub vcl_recv {
-    # Normalize the header, remove the port (in case you're testing this on various TCP ports)
-    set req.http.Host = regsub(req.http.Host, ":[0-9]+", "");
-}
-
-
-sub vcl_recv {
-    # Remove the proxy header (see https://httpoxy.org/#mitigate-varnish)
-    unset req.http.proxy;
+# Default TTL for cache items
+sub vcl_backend_response {
+    set beresp.ttl = 2h;
 }
 
 
 sub vcl_recv {
-    # Normalize the query arguments
-    set req.url = std.querysort(req.url);
-}
-
-
-# Allow purging
-sub vcl_recv {
-    # Allow purging
-    if (req.method == "PURGE") {
-      if (!client.ip ~ purge) { # purge is the ACL defined at the begining
-        # Not from an allowed IP? Then die with an error.
-        return (synth(405, "This IP is not allowed to send PURGE requests."));
-      }
-      # If you got this stage (and didn't error out above), purge the cached result
-      return (purge);
+    # Only cache GET or HEAD requests. This makes sure the POST requests are always passed.
+    if (req.method != "GET" && req.method != "HEAD") {
+      return (pass);
     }
 }
 
+sub vcl_recv {
+    # Strip hash, server doesn't need it.
+    if (req.url ~ "\#") {
+      set req.url = regsub(req.url, "\#.*$", "");
+    }
+}
+
+
+sub vcl_recv {
+    # Are there cookies left with only spaces or that are empty?
+    if (req.http.cookie ~ "^\s*$") {
+      unset req.http.cookie;
+    }
+
+    if (req.http.Cache-Control ~ "(?i)no-cache") {
+    #if (req.http.Cache-Control ~ "(?i)no-cache" && client.ip ~ editors) { # create the acl editors if you want to restrict the Ctrl-F5
+    # http://varnish.projects.linpro.no/wiki/VCLExampleEnableForceRefresh
+    # Ignore requests via proxy caches and badly behaved crawlers
+    # like msnbot that send no-cache with every request.
+      if (! (req.http.Via || req.http.User-Agent ~ "(?i)bot" || req.http.X-Purge)) {
+        #set req.hash_always_miss = true; # Doesn't seems to refresh the object in the cache
+        return(purge); # Couple this with restart in vcl_purge and X-Purge header to avoid loops
+      }
+    }
+}
+
+sub vcl_recv {
+    # Send Surrogate-Capability headers to announce ESI support to backend
+    set req.http.Surrogate-Capability = "key=ESI/1.0";
+
+    if (req.http.Authorization) {
+      # Not cacheable by default
+      return (pass);
+    }
+}
+
+sub vcl_hash {
+    # hash cookies for requests that have them
+    if (req.http.Cookie) {
+      hash_data(req.http.Cookie);
+    }
+}
+
+
+sub vcl_deliver {
+    if (obj.hits > 0) { # Add debug header to see if it's a HIT/MISS and the number of hits, disable when not needed
+      set resp.http.X-Cache = "HIT";
+    } else {
+      set resp.http.X-Cache = "MISS";
+    }
+    return (deliver);
+}
+
+# Normalize header
+#sub vcl_recv {
+    # Normalize the header, remove the port (in case you're testing this on various TCP ports)
+#    set req.http.Host = regsub(req.http.Host, ":[0-9]+", "");
+#}
+
+# Remove proxy
+#sub vcl_recv {
+    # Remove the proxy header (see https://httpoxy.org/#mitigate-varnish)
+#    unset req.http.proxy;
+#}
+
+#sub vcl_recv {
+    # Normalize the query arguments
+#    set req.url = std.querysort(req.url);
+#}
 
 
 # Hash cookies for caching
@@ -76,56 +121,10 @@ sub vcl_hash {
     }
 }
 
-
-# Serve queued requests nicely
-sub vcl_hit {
-    # https://www.varnish-cache.org/docs/trunk/users-guide/vcl-grace.html
-    # When several clients are requesting the same page Varnish will send one request to
-    # the backend and place the others on hold while fetching one copy from the backend.
-    # In some products this is called request coalescing and Varnish does this automatically.
-    # If you are serving thousands of hits per second the queue of waiting requests can get huge.
-    # There are two potential problems - one is a thundering herd problem - suddenly releasing a thousand
-    # threads to serve content might send the load sky high. Secondly - nobody likes to wait. To deal
-    # with this we can instruct Varnish to keep the objects in cache beyond their TTL and to serve
-    # the waiting requests somewhat stale content.
-
-    # We have no fresh fish. Lets look at the stale ones.
-    if (std.healthy(req.backend_hint)) {
-      # Backend is healthy. Limit age to 10s.
-      if (obj.ttl + 10s > 0s) {
-        #set req.http.grace = "normal(limited)";
-        return (deliver);
-      } else {
-        # No candidate for grace. Fetch a fresh object.
-        return(fetch);
-      }
-    } else {
-      # backend is sick - use full grace
-        if (obj.ttl + obj.grace > 0s) {
-        #set req.http.grace = "full";
-        return (deliver);
-      } else {
-        # no graced object.
-        return (fetch);
-      }
-    }
-
-    # fetch & deliver once we get the result
-    return (fetch); # Dead code, keep as a safeguard
-}
-
+# vcl_hit - find better example here
+# https://www.varnish-software.com/wiki/content/tutorials/varnish/sample_vclTemplate.html
 
 # Pass real IP to backend
-sub vcl_recv {
-    if (req.restarts == 0) {
-        if (req.http.X-Forwarded-For) {
-           set req.http.X-Forwarded-For = req.http.X-Forwarded-For + ", " + client.ip;
-       } else {
-        set req.http.X-Forwarded-For = client.ip;
-       }
-    }
-}
-
 
 
 # Assets
@@ -135,4 +134,8 @@ sub vcl_recv {
 
 # content
 #	set beresp.ttl = 1800s; # Cache 30 minutes in varnish
+
+
+
+# Improve logging of hit/miss
 

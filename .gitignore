@@ -1,5 +1,7 @@
-.*.swp
-
 vars.yml
 inventory
 playbook.retry
+
+# nano tmp files
+.*.swp
+*.save

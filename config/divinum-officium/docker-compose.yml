@@ -1,4 +1,4 @@
-version: '3.5'
+version: '3.7'
 
 ############################
 #
@@ -42,8 +42,13 @@ services:
       - lbclients
     labels:
       - traefik.enable=true
+{% if use_varnish_prod %}
+      - traefik.backend={{app.domain | first}}
+      - traefik.frontend.rule=Host:{{app.domain | join(",")}}
+{% else %}
       - traefik.backend={{app.test_domain}}
       - traefik.frontend.rule=Host:{{app.test_domain}}
+{% endif %}
       - traefik.docker.network=loadbalancer
       - traefik.port=80
 
@@ -56,11 +61,21 @@ services:
       - traefik.enable=true
     networks:
       - lbclients
-    labels:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 5s
+      timeout: 5s
+      retries: 2
+      start_period: 30s
     labels:
       - traefik.enable=true
+{% if use_varnish_prod %}
+      - traefik.backend={{app.test_domain}}
+      - traefik.frontend.rule=Host:{{app.test_domain}}
+{% else %}
       - traefik.backend={{app.domain | first}}
       - traefik.frontend.rule=Host:{{app.domain | join(",")}}
+{% endif %}
       - traefik.docker.network=loadbalancer
       - traefik.port=8080
 
