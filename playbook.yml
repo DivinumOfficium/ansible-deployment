@@ -506,19 +506,21 @@
         - file: config/varnish/default.vcl
 
 
-    - name: "Check for LB Network"
+# TODO : only attempt if it doesn't exist
+#    - name: "Check for LB Network"
+#      become: true
+#      become_method: sudo
+#      register: networks
+#      failed_when: false
+#      changed_when: lbcheck.rc | failed
+#      shell: docker network ls | awk '{print $2}' | grep loadbalancer
+
+
+    - name: "Make LB Net if Needed"
       become: true
       become_method: sudo
-      register: lbcheck
       failed_when: false
-      changed_when: lbcheck.rc != 0
-      shell: "docker network ls | awk '{print $2}' | grep 'loadbalancer' &> /dev/null"
-
-
-    - name: "Check for LB Network"
-      become: true
-      become_method: sudo
-      when: lbcheck.rc != 0
+      changed_when: false
       shell: "docker network create loadbalancer"
 
 
